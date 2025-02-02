@@ -1,4 +1,4 @@
-# llama3-custom-inference
+# Llama3-Custom-Inference
 This repo implements from scratch llama3 offline inference in Pytorch, and more importantly a custom flash attention decode kernel.
 This implementation reaches the same throughput in tokens per second as vLLM in single user and batched scenarios.
 The custom decode kernel reaches the same performance and memory bandwidth as the flash attention 2 inference kernel.
