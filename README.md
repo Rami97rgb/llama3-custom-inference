@@ -1,5 +1,5 @@
 # Llama3-Custom-Inference
-This repo implements from scratch llama3 offline inference in Pytorch, and more importantly a custom flash attention decode kernel.
+This repo implements from scratch llama3 offline inference in Pytorch, and more importantly a custom flash attention decode CUDA kernel.
 This implementation reaches the same throughput in tokens per second as vLLM in single user and batched scenarios.
 The custom decode kernel reaches the same performance and memory bandwidth as the flash attention 2 inference kernel.
 
@@ -31,9 +31,9 @@ duration: 1.4909467697143555 Seconds | throughput: 85.85148886604651 Toks/sec
 peak memory consumption: 2868 MiB
 ```
 This uses the repos llama3 implementation by default, and you can benchmark vLLM instead with ```--use_vllm_impl```.
-We mesure average inference throughput (prefill + decode).
+We mesure average inference throughput (prefill + decode) in Toks/Sec.
 
-Here are the results I obtained with llama 3.2 1B running locally on my RTX 4060 GPU:
+Here are the results I obtained by running llama 3.2 1B locally on my RTX 4060 GPU:
 
 ### Batched inference
 We set the batch size to the max power of two that does not cause an OOM error (model weights + KV cache + activations).
@@ -65,9 +65,9 @@ python3 benchmark_kernel.py --head_size 64 --q_num_heads 32 --kv_num_heads 8 --b
 The custom kernel is used by default, but you can run the FA2 implementation instead (splitkv/combine kernels) by adding the ```--use_pytorch_kernel``` flag.
 There are two methods for mesuring memory bandwidth:
 1) using Nvidia Nsight Compute profiler (the recommended way for getting accurate results, but not supported by most cloud providers): run with ```ncu``` command and add ```--use_ncu``` flag.
-2) using the benchmark setup (default, although not 100% accurate). The GPU's L2 cache is cleared after each iteration, but you skip this with ```--dont_flush_gpu_cache```.
+2) using the benchmark setup (default, although not 100% accurate). The GPU's L2 cache is cleared after each iteration, but you can skip this with ```--dont_flush_gpu_cache```.
 
-When looking at the actual inference trace (with Nvidia Nsight Systems), execution time is fairly close to the one reported when profiling the kernel with ```ncu```. So I am presenting these results instead.
+When looking at the actual inference trace (with Nvidia Nsight Systems), execution time is fairly close to the one reported by profiling the kernel with ```ncu```. So I am presenting these results instead.
 
 I simulated running flash attention decode kernels for llama 3.2 1B on my RTX 4060 using batch size 1 (to make it more challenging to fully utilize the avaible memory bandwidth). Here, we are comparing the custom implementation of flash attention splitkv kernel with the one used in Pytorch/FA2:
 
@@ -76,7 +76,7 @@ I simulated running flash attention decode kernels for llama 3.2 1B on my RTX 40
 We reach similar memory bandwidth utilization across a variety of sequence lengths.
 
 ## Speedup opportunities
-Although our custom inference decode kernel reaches the same performance as FA2, there is still some room for improvement when it comes to Toks/Sec throughput espcially for the prefill stage (we already use Pytorch FA2 for this).
+Although our custom inference decode kernel reaches the same performance as FA2, there is still some room for improvement when it comes to Toks/Sec throughput especially for the prefill stage (we already use Pytorch FA2 for this).
 We can speedup inference further by:
 1) Implementing a fused kernel for the RMSNorm layer (even Pytorch doesn't have a fused implementation for this).
 2) Implementing a fused kernel for the Rotary Embeding.
