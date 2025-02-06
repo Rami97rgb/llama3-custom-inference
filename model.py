@@ -20,7 +20,7 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from custom_kernels import flash_attention_decode_extension
+from custom_kernels import custom_kernels_extension
 
 # rotary embeding related functions, could be optimized with a fused implementation
 
@@ -90,8 +90,10 @@ class RMSNorm(torch.nn.Module):
         return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
-        output = self._norm(x.float()).type_as(x)
-        return output * self.weight
+        # output = self._norm(x.float()).type_as(x)
+        # return output * self.weight
+        output = custom_kernels_extension.rms_norm(x, self.weight)
+        return output
 
 class CausalSelfAttention(nn.Module):
 
@@ -136,7 +138,7 @@ class CausalSelfAttention(nn.Module):
             with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
                 y = F.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
         else:
-            y = flash_attention_decode_extension.flash_attention_decode(q, k, v)
+            y = custom_kernels_extension.flash_attention_decode(q, k, v)
 
         y = y.transpose(1, 2).contiguous().view(B, T, C)
         y = self.c_proj(y)

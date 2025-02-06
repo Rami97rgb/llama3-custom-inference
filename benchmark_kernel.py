@@ -1,7 +1,7 @@
 import torch
 from torch.nn import functional as F
 import argparse
-from custom_kernels import flash_attention_decode_extension
+from custom_kernels import custom_kernels_extension
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 '''
@@ -22,7 +22,7 @@ def flush_cache():
 # select custom or pytorch kernel
 def run_kernel(query, key, value, custom=True):
     if custom:
-        _ = flash_attention_decode_extension.flash_attention_decode(query, key, value)
+        _ = custom_kernels_extension.flash_attention_decode(query, key, value)
     else:
         with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
             _ = F.scaled_dot_product_attention(query, key, value, enable_gqa=True)

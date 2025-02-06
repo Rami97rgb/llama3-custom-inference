@@ -336,3 +336,55 @@ torch::Tensor flash_attention_decode(torch::Tensor query, torch::Tensor keys, to
     
     return result;
 }
+
+template <typename Precision, int BLOCK_SIZE, int NUM_WARPS>
+__global__ void rms_norm_kernel(int BATCH_SIZE, int SEQ_N, int EMBED_DIM, Precision* input, Precision* weight, Precision* output){
+    
+    // output = (1 / rms(input)) * input * weight
+    // rms(input) = sqrt(eps + (1 / EMBED_DIM) + sum(input(i)^2))
+
+    float eps = 1e-6f;
+    const int tid = threadIdx.x;
+    const int batch = blockIdx.x;
+    const int tok = blockIdx.y;
+    __shared__ float reduce_smem[NUM_WARPS];
+
+    float val = 0.0;
+
+    // compute sum in float32 for better accuracy
+    for (int idx = tid; idx < EMBED_DIM; idx += BLOCK_SIZE){
+        float inp = p2float(input[batch * SEQ_N * EMBED_DIM + tok * EMBED_DIM + idx]);
+        inp *= inp;
+        val += inp;
+    }
+    
+    float sum_sqr = block_sum<NUM_WARPS>(reduce_smem, val);
+
+    Precision inv_rms =  float2p<Precision>(__frsqrt_rn((sum_sqr / float(EMBED_DIM)) + eps));
+
+    for (int idx = tid; idx < EMBED_DIM; idx += BLOCK_SIZE){
+        output[batch * SEQ_N * EMBED_DIM + tok * EMBED_DIM + idx] = inv_rms * weight[idx] * input[batch * SEQ_N * EMBED_DIM + tok * EMBED_DIM + idx];
+    }
+}
+
+torch::Tensor rms_norm(torch::Tensor input, torch::Tensor weight) {
+    
+    const int BATCH_SIZE = input.size(0);
+    const int SEQ_N = input.size(1);
+    const int EMBED_DIM =  input.size(2);
+
+    const int BLOCK_SIZE = 1024;
+    const int NUM_WARPS = BLOCK_SIZE / WARP_SIZE;
+
+    dim3 grid;
+    grid.x = BATCH_SIZE;
+    grid.y = SEQ_N;
+    grid.z = 1;
+
+    auto output = torch::empty_like(input);
+    
+    // each thread block applies RMS Norm to token embdeddings across batch size and sequence length
+    rms_norm_kernel<Precision, BLOCK_SIZE, NUM_WARPS><<<grid, BLOCK_SIZE>>>(BATCH_SIZE, SEQ_N, EMBED_DIM, (Precision*)(input.data_ptr<P2Torch>()), (Precision*)(weight.data_ptr<P2Torch>()), (Precision*)(output.data_ptr<P2Torch>()));
+
+    return output;
+}
