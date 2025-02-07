@@ -338,12 +338,11 @@ torch::Tensor flash_attention_decode(torch::Tensor query, torch::Tensor keys, to
 }
 
 template <typename Precision, int BLOCK_SIZE, int NUM_WARPS>
-__global__ void rms_norm_kernel(int BATCH_SIZE, int SEQ_N, int EMBED_DIM, Precision* input, Precision* weight, Precision* output){
+__global__ void custom_rms_norm_kernel(int BATCH_SIZE, int SEQ_N, int EMBED_DIM, float eps, Precision* input, Precision* weight, Precision* output){
     
     // output = (1 / rms(input)) * input * weight
     // rms(input) = sqrt(eps + (1 / EMBED_DIM) + sum(input(i)^2))
 
-    float eps = 1e-6f;
     const int tid = threadIdx.x;
     const int batch = blockIdx.x;
     const int tok = blockIdx.y;
@@ -367,7 +366,7 @@ __global__ void rms_norm_kernel(int BATCH_SIZE, int SEQ_N, int EMBED_DIM, Precis
     }
 }
 
-torch::Tensor rms_norm(torch::Tensor input, torch::Tensor weight) {
+torch::Tensor rms_norm(torch::Tensor input, torch::Tensor weight, float eps) {
     
     const int BATCH_SIZE = input.size(0);
     const int SEQ_N = input.size(1);
@@ -384,7 +383,7 @@ torch::Tensor rms_norm(torch::Tensor input, torch::Tensor weight) {
     auto output = torch::empty_like(input);
     
     // each thread block applies RMS Norm to token embdeddings across batch size and sequence length
-    rms_norm_kernel<Precision, BLOCK_SIZE, NUM_WARPS><<<grid, BLOCK_SIZE>>>(BATCH_SIZE, SEQ_N, EMBED_DIM, (Precision*)(input.data_ptr<P2Torch>()), (Precision*)(weight.data_ptr<P2Torch>()), (Precision*)(output.data_ptr<P2Torch>()));
+    custom_rms_norm_kernel<Precision, BLOCK_SIZE, NUM_WARPS><<<grid, BLOCK_SIZE>>>(BATCH_SIZE, SEQ_N, EMBED_DIM, eps, (Precision*)(input.data_ptr<P2Torch>()), (Precision*)(weight.data_ptr<P2Torch>()), (Precision*)(output.data_ptr<P2Torch>()));
 
     return output;
 }

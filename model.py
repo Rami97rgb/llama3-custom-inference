@@ -78,7 +78,7 @@ def precompute_freqs_cis(
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
 
-# reference version of rmsnorm, could also be optimized with a fused implementation
+# custom kernel implementation for RMSNorm
 
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -86,13 +86,8 @@ class RMSNorm(torch.nn.Module):
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
 
-    def _norm(self, x):
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-
     def forward(self, x):
-        # output = self._norm(x.float()).type_as(x)
-        # return output * self.weight
-        output = custom_kernels_extension.rms_norm(x, self.weight)
+        output = custom_kernels_extension.rms_norm(x, self.weight, self.eps)
         return output
 
 class CausalSelfAttention(nn.Module):
