@@ -3,6 +3,10 @@ This repo implements from scratch llama3 offline inference in Pytorch, and more 
 This implementation reaches the same throughput in tokens per second as vLLM in single user and batched scenarios.
 The custom decode kernel reaches the same performance and memory bandwidth as the flash attention 2 inference kernel.
 
+**v1.0:** custom flash attention decode kernel.
+
+**v1.1:** custom rms norm kernel.
+
 ## Test llama3 inference
 First install the requirements, then compile the custom flash attention decode kernels for llama3 (llama 3.x models with head sizes 64 and 128 are supported as long as they fit into a single GPU VRAM, and don't require tensor or pipeline parallelism), and load them as a Python module usable by Pytorch. Then you can select a llama3 model name from the Hugging Face hub, and test the inference implementation:
 ```
@@ -40,20 +44,20 @@ We set the batch size to the max power of two that does not cause an OOM error (
 
 | Batch Size    | Input / Ouput Toks | Custom Throughtput | vLLM Throughtput   |
 | ------------- | ------------------ | ------------------ | ------------------ |
-| 256           | 128, 128           | 2688.44            | 2535.55            |
-| 64            | 128, 2048          | 1982.40            | 1769.46            |
-| 16            | 2048, 128          | 384.71             | 403.66             |
-| 16            | 2048, 2048         | 729.24             | 743.11             |
+| 256           | 128, 128           | 2765.52            | 2535.55            |
+| 64            | 128, 2048          | 2017.79            | 1769.46            |
+| 16            | 2048, 128          | 409.78             | 403.66             |
+| 16            | 2048, 2048         | 754.88             | 743.11             |
 
 ### Single user inference
 Batch size is set to 1 for all scenarios, this puts more strain on memory bandwidth as the limiting factor for thoughtput.
 
 | Batch Size    | Input / Ouput Toks | Custom Throughtput | vLLM Throughtput   |
 | ------------- | ------------------ | ------------------ | ------------------ |
-| 1             | 128, 128           | 85.92              | 88.93              |
-| 1             | 128, 2048          | 85.08              | 89.59              |
-| 1             | 2048, 128          | 74.90              | 78.10              |
-| 1             | 2048, 2048         | 82.47              | 86.83              |
+| 1             | 128, 128           | 89.84              | 88.93              |
+| 1             | 128, 2048          | 88.75              | 89.59              |
+| 1             | 2048, 128          | 77.64              | 78.10              |
+| 1             | 2048, 2048         | 85.93              | 86.83              |
 
 ## Profile decode kernel
 You can mesure memory bandwitdh of the custom decode kernel and compare it to [the flash attention 2 inference kernel](https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#22-optimize-for-inference). This is done by simulating the attention input (query, key, value) for llama3 models.
