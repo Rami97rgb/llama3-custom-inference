@@ -1,0 +1,4 @@
+./custom_kernels/*ninja*
+./custom_kernels/*.o
+./custom_kernels/*.so
+./__pycache__

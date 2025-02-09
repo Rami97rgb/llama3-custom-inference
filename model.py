@@ -22,14 +22,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from custom_kernels import custom_kernels_extension
 
-# rotary embeding related functions, could be optimized with a fused implementation
-
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-    ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(*shape)
+# precompute frequency to be used by custom rotary embedding kernel
 
 def apply_scaling(freqs: torch.Tensor):
     # Values obtained from grid search
@@ -55,18 +48,6 @@ def apply_scaling(freqs: torch.Tensor):
             new_freqs.append((1 - smooth) * freq / scale_factor + smooth * freq)
     return torch.tensor(new_freqs, dtype=freqs.dtype, device=freqs.device)
 
-def apply_rotary_emb(
-    xq: torch.Tensor,
-    xk: torch.Tensor,
-    freqs_cis: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
-    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
-    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
-    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
-    return xq_out.type_as(xq), xk_out.type_as(xk)
-
 def precompute_freqs_cis(
     dim: int, end: int, theta: float = 10000.0, use_scaled: bool = False
 ):
@@ -76,7 +57,7 @@ def precompute_freqs_cis(
         freqs = apply_scaling(freqs)
     freqs = torch.outer(t, freqs)
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
-    return freqs_cis
+    return torch.view_as_real(freqs_cis).flatten(1)
 
 # custom kernel implementation for RMSNorm
 
@@ -116,7 +97,8 @@ class CausalSelfAttention(nn.Module):
         q, k, v = map(lambda t: t.view(B, T, -1, self.hd), (q, k, v))  # (B, T, NH, HD)
 
         torch.cuda.nvtx.range_push("rot_embd")
-        q, k = apply_rotary_emb(q, k, freqs_cis=freqs_cis)
+        q = custom_kernels_extension.rot_embed(q, freqs_cis)
+        k = custom_kernels_extension.rot_embed(k, freqs_cis)
         torch.cuda.nvtx.range_pop()
 
         torch.cuda.nvtx.range_push("use_kv")

@@ -387,3 +387,56 @@ torch::Tensor rms_norm(torch::Tensor input, torch::Tensor weight, float eps) {
 
     return output;
 }
+
+template <typename Precision>
+__global__ void custom_rot_embed_kernel(int BATCH_SIZE, int SEQ_N, int NUM_HEADS, int HEAD_SIZE, int batch_stride, int tok_stride, int head_stride, Precision* input, Precision* output, float* freq){
+    const int tid = threadIdx.x;
+    const int batch = blockIdx.x;
+    const int tok = blockIdx.y;
+    const int head = blockIdx.z;
+
+    using Comp_Vec = typename Vec<Precision, 2>::Type;
+
+    // q(i) and q(i+1)
+    Comp_Vec qk_comp = reinterpret_cast<Comp_Vec *>(&input[batch * batch_stride + tok * tok_stride + head * head_stride + tid * 2])[0];
+    // real(freq) = cos(m*theta) and img(freq) = sin(m*theta)
+    float2 freq_comp = reinterpret_cast<float2 *>(&freq[tok * HEAD_SIZE + tid * 2])[0];
+
+    float2 qk_comp_f;
+    qk_comp_f.x = p2float(qk_comp.x);
+    qk_comp_f.y = p2float(qk_comp.y);
+    
+    // q(i) = q(i) * real(freq) - q(i+1) * img(freq)
+    qk_comp.x = float2p<Precision>(qk_comp_f.x * freq_comp.x - qk_comp_f.y * freq_comp.y);
+    // q(i+1) = q(i) * img(freq) + q(i+1) * real(freq)
+    qk_comp.y = float2p<Precision>(qk_comp_f.x * freq_comp.y + qk_comp_f.y * freq_comp.x);
+
+    reinterpret_cast<Comp_Vec *>(&output[batch * SEQ_N * NUM_HEADS * HEAD_SIZE + tok * NUM_HEADS * HEAD_SIZE + head * HEAD_SIZE + tid * 2])[0] = qk_comp;
+    
+}
+
+torch::Tensor rot_embed(torch::Tensor input, torch::Tensor freq) {
+    
+    const int BATCH_SIZE = input.size(0);
+    const int SEQ_N = input.size(1);
+    const int NUM_HEADS =  input.size(2);
+    const int HEAD_SIZE =  input.size(3);
+
+    const int batch_stride = input.stride(0);
+    const int tok_stride = input.stride(1);
+    const int head_stride = input.stride(2);
+
+    const int BLOCK_SIZE = HEAD_SIZE / 2;
+
+    dim3 grid;
+    grid.x = BATCH_SIZE;
+    grid.y = SEQ_N;
+    grid.z = NUM_HEADS;
+    
+    auto output = torch::empty_like(input);
+    
+    // apply rotary embedding to query or key using precomputed frequency
+    custom_rot_embed_kernel<Precision><<<grid, BLOCK_SIZE>>>(BATCH_SIZE, SEQ_N, NUM_HEADS, HEAD_SIZE, batch_stride, tok_stride, head_stride, (Precision*)(input.data_ptr<P2Torch>()), (Precision*)(output.data_ptr<P2Torch>()), freq.data_ptr<float>());
+
+    return output;
+}
