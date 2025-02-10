@@ -10,10 +10,10 @@ The custom decode kernel reaches the same performance and memory bandwidth as th
 **v1.2:** custom rotary positional encoding kernel.
 
 ## Test llama3 inference
-First install the requirements, then compile the custom flash attention decode kernels for llama3 (llama 3.x models with head sizes 64 and 128 are supported as long as they fit into a single GPU VRAM, and don't require tensor or pipeline parallelism), and load them as a Python module usable by Pytorch. Then you can select a llama3 model name from the Hugging Face hub, and test the inference implementation:
+First install the requirements, then compile the custom kernels for llama3 and bind them as a Python module usable by Pytorch (llama 3.x models with head sizes 64 and 128 are supported as long as they fit into a single GPU VRAM, and don't require tensor or pipeline parallelism). You can select a llama3 model from the Hugging Face hub to test the inference implementation:
 ```
 pip install -r requirements.txt
-python3 load_custom_kernels.py
+python3 compile_and_bind_custom_kernels.py
 python3 test_llama3.py --model_name "unsloth/Llama-3.2-1B"
 ```
 
@@ -61,7 +61,7 @@ Batch size is set to 1 for all scenarios, this puts more strain on memory bandwi
 | 1             | 2048, 128          | 79.68              | 78.10              |
 | 1             | 2048, 2048         | 87.51              | 86.83              |
 
-## Profile decode kernel
+## Profile attention decode kernel
 You can mesure memory bandwitdh of the custom decode kernel and compare it to [the flash attention 2 inference kernel](https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#22-optimize-for-inference). This is done by simulating the attention input (query, key, value) for llama3 models.
 
 For llama 3.2 1B, batch size 1, and sequence length 256:
