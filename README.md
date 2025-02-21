@@ -13,7 +13,7 @@ The custom decode kernel reaches the same performance and memory bandwidth as th
 First install the requirements, then compile the custom kernels for llama3 and bind them as a Python module usable by Pytorch (llama 3.x models with head sizes 64 and 128 are supported as long as they fit into a single GPU VRAM, and don't require tensor or pipeline parallelism). You can select a llama3 model from the Hugging Face hub to test the inference implementation:
 ```
 pip install -r requirements.txt
-python3 compile_and_bind_custom_kernels.py
+python3 setup.py
 python3 test_llama3.py --model_name "unsloth/Llama-3.2-1B"
 ```
 
@@ -81,8 +81,13 @@ I simulated running flash attention decode kernels for llama 3.2 1B on my RTX 40
 
 We reach similar memory bandwidth utilization across a variety of sequence lengths.
 
-## Speedup opportunities
-Although our custom inference decode kernel reaches the same performance as FA2, there is still some room for improvement when it comes to Toks/Sec throughput especially for the prefill stage (we already use Pytorch FA2 for this).
-We can speedup inference further by:
-1) Implementing a fused kernel for the RMSNorm layer (even Pytorch doesn't have a fused implementation for this): **Done.**
-2) Implementing a fused kernel for the Rotary Embeding: **Done.**
+## References
+https://github.com/Dao-AILab/flash-attention
+
+https://github.com/karpathy/llm.c
+
+https://github.com/meta-llama/llama-models
+
+https://github.com/NVIDIA/TensorRT-LLM
+
+https://github.com/vllm-project/vllm
